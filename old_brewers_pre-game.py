@@ -35,8 +35,8 @@ page_str = str(response.content)
 
 if 'Brewers' not in page_str:
     day_off = "The Brewers have the day off!"
-    filename = "/home/chad/brewers.txt"
-    fh = open("/home/chad/brewers.txt", "w")
+    filename = "/Users/chad/brewers.txt"
+    fh = open("/Users/chad/brewers.txt", "w")
     fh.write(formatted_date + '\n' + day_off)
     fh.close()
 
@@ -71,14 +71,14 @@ else:
         c_start_hour = int(z_start_hour) - 5
     
     # Write the file with all of the details
-    filename = "/home/chad/brewers.txt"
-    fh = open("/home/chad/brewers.txt", "w")
+    filename = "/Users/chad/brewers.txt"
+    fh = open("/Users/chad/brewers.txt", "w")
     fh.write(formatted_date + "\n" + base_url + "\n" + str(brewers_game_index) + "\n" + str(gamePk) + "\n" + home_or_away + "\n" + str(z_start_time[0]) + " ZULU" + "\n" + str(c_start_hour) + ":" + str(start_min) + " CDT")
     fh.close()
 
     # Create the CRON job to start checking the when the game starts
-    cron = CronTab(user='chad')
-    job = cron.new(command='python /home/chad/score_check.py', comment='brewers')
-    job.minute.on(start_min)
-    job.hour.on(c_start_hour)
-    cron.write()
+#    cron = CronTab(user='chad')
+#    job = cron.new(command='python /home/chad/score_check.py', comment='brewers')
+#    job.minute.on(start_min)
+#    job.hour.on(c_start_hour)
+#    cron.write()
