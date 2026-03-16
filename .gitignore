@@ -1,0 +1,9 @@
+# Logs
+brewers.log
+brewers_watcher.log
+brewers_test.log
+logs/
+
+# macOS
+.DS_Store
+
