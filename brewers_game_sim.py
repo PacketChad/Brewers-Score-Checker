@@ -53,15 +53,17 @@ class FlushHandler(logging.FileHandler):
         super().emit(record)
         self.flush()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        FlushHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
+# Clear any handlers that may have been added before this point
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(FlushHandler(LOG_FILE, mode='a'))
+root_logger.addHandler(logging.StreamHandler(sys.stdout))
+for h in root_logger.handlers:
+    h.setFormatter(logging.Formatter(
+        fmt="%(asctime)s  %(levelname)-8s  %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
 log = logging.getLogger(__name__)
 
 
