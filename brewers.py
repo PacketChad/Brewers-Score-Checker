@@ -62,7 +62,7 @@ WEBHOOK_TIMEOUT  = 10
 BREWERS_TEAM_ID  = 158
 BREWERS_ABBREV   = "MIL"
 SCHEDULE_REFRESH_HOURS = 24
-PREGAME_TIMEOUT_MINS   = 180     # bail out if game hasn't gone live this many minutes after scheduled start
+PREGAME_TIMEOUT_MINS   = 60     # bail out if game hasn't gone live this many minutes after scheduled start
 BROADCAST_DELAY_SEC    = 0       # extra wait after score detected before webhook fires
 POST_WEBHOOK_DELAY     = 30      # wait after any webhook fires to let it finish
 
@@ -310,10 +310,10 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                  inning, mil_score, prev_mil_score, opp_score, state)
 
         # ── Pregame timeout — bail out if stuck in preview too long ────────
-        if not game_started and state == "preview":
+        if not game_started and inning == 0:
             mins_waiting = (datetime.datetime.now(datetime.timezone.utc) - pregame_start).total_seconds() / 60
             if mins_waiting >= PREGAME_TIMEOUT_MINS:
-                log.warning("Game has been in preview state for %.0f minutes — possible postponement. Exiting watcher.", mins_waiting)
+                log.warning("Game has not started after %.0f minutes — possible postponement. Exiting watcher.", mins_waiting)
                 break
             else:
                 log.info("Pregame — waiting for game to start (%.0f/%d min timeout).", mins_waiting, PREGAME_TIMEOUT_MINS)
@@ -337,7 +337,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         # ── Brewers score ─────────────────────────────────────────────────
         if first_poll and mil_score > 0:
             log.info("First poll baseline — MIL score is already %d, skipping score webhook.", mil_score)
-        elif state in ("live", "final") and mil_score > prev_mil_score:
+        elif (state in ("live", "final") or inning > 0) and mil_score > prev_mil_score:
             runs_added = mil_score - prev_mil_score
             log.info("BREWERS SCORE! +%d run(s) — MIL %d -> %d, OPP %d  (inning %d)",
                      runs_added, prev_mil_score, mil_score, opp_score, inning)

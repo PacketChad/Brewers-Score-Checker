@@ -178,7 +178,7 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
         # ── Brewers score ─────────────────────────────────────────────────
         if first_poll and mil_score > 0:
             log.info("First poll baseline — MIL score is already %d, skipping score webhook.", mil_score)
-        elif state in ("live", "final") and mil_score > prev_mil_score:
+        elif (state in ("live", "final") or inning > 0) and mil_score > prev_mil_score:
             runs_added = mil_score - prev_mil_score
             log.info("BREWERS SCORE! +%d run(s) — MIL %d -> %d, OPP %d  (inning %d)",
                      runs_added, prev_mil_score, mil_score, opp_score, inning)
