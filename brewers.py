@@ -409,6 +409,56 @@ def test_webhooks(webhooks, dry_run=False):
 # Agent loop  (season-level scheduler)
 # ---------------------------------------------------------------------------
 
+
+def get_live_game():
+    """
+    Check if there is a Brewers game currently in progress right now.
+    Returns a game dict if found, None otherwise.
+    """
+    local_tz  = ZoneInfo(LOCAL_TZ_NAME)
+    today_str = datetime.datetime.now(local_tz).strftime("%Y-%m-%d")
+    url       = MLB_SCHEDULE_URL + "&date=" + today_str
+
+    log.info("Checking for a game currently in progress...")
+    data = http_get(url, timeout=15)
+    if not data:
+        return None
+
+    for date_block in data.get("dates", []):
+        for game in date_block.get("games", []):
+            teams   = game.get("teams", {})
+            away_id = teams.get("away", {}).get("team", {}).get("id")
+            home_id = teams.get("home", {}).get("team", {}).get("id")
+            if BREWERS_TEAM_ID not in (away_id, home_id):
+                continue
+
+            state = game.get("status", {}).get("abstractGameState", "")
+            if state not in ("Live", "In Progress"):
+                continue
+
+            raw_dt   = game.get("gameDate", "")
+            utc_dt   = datetime.datetime.fromisoformat(raw_dt.replace("Z", "+00:00"))
+            local_dt = utc_dt.astimezone(ZoneInfo(LOCAL_TZ_NAME))
+
+            log.info("Found game in progress: %s @ %s",
+                     teams["away"]["team"]["name"], teams["home"]["team"]["name"])
+
+            return {
+                "game_pk":     game["gamePk"],
+                "home":        teams["home"]["team"]["name"],
+                "away":        teams["away"]["team"]["name"],
+                "home_abbrev": teams["home"]["team"].get("abbreviation", ""),
+                "away_abbrev": teams["away"]["team"].get("abbreviation", ""),
+                "utc_dt":      utc_dt,
+                "local_dt":    local_dt,
+                "label":       "{} @ {}  —  {}".format(
+                    teams["away"]["team"]["name"],
+                    teams["home"]["team"]["name"],
+                    local_dt.strftime("%a %b %d %I:%M %p %Z"),
+                ),
+            }
+    return None
+
 def run_agent(webhooks, poll_sec, pregame_sec, broadcast_delay, post_webhook_delay, dry_run):
     """
     Main agent loop:
@@ -417,7 +467,20 @@ def run_agent(webhooks, poll_sec, pregame_sec, broadcast_delay, post_webhook_del
       3. Hand off to watch_game() for the duration of the game.
       4. Advance to the next game. Refresh schedule every 24 hours.
     """
-    log.info("Agent active. Fetching season schedule...")
+    log.info("Agent active. Checking for game in progress...")
+    live_game = get_live_game()
+    if live_game:
+        log.info("Resuming mid-game: %s", live_game["label"])
+        log.info("=" * 60)
+        log.info("GAME TIME: %s", live_game["label"])
+        log.info("=" * 60)
+        watch_game(live_game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webhook_delay, dry_run)
+        if _shutdown:
+            log.info("Agent stopped.")
+            return
+        log.info("Game over. Continuing to season schedule.")
+
+    log.info("Fetching season schedule...")
     games        = fetch_season_schedule()
     last_refresh = datetime.datetime.now(datetime.timezone.utc)
     game_index   = 0
