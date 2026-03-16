@@ -228,12 +228,15 @@ def parse_score(linescore, game):
     else:
         mil_score, opp_score = away_runs, home_runs
 
-    inning    = linescore.get("currentInning", 0) or 0
-    state_raw = linescore.get("abstractGameState", "Preview").lower()
+    inning       = linescore.get("currentInning", 0) or 0
+    inning_half  = linescore.get("currentInningHalf", "").lower()
+    is_game_over = linescore.get("isGameOver", False)
+    state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
-    if state_raw == "final":
+    # Use isGameOver or state=final as the game-over signal
+    if is_game_over or state_raw == "final":
         state = "final"
-    elif state_raw in ("live", "in progress"):
+    elif state_raw in ("live", "in progress") or inning > 0:
         state = "live"
     else:
         state = "preview"
