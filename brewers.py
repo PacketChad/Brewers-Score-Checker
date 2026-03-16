@@ -308,7 +308,8 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                  inning, mil_score, prev_mil_score, opp_score, state)
 
         # ── Game start ────────────────────────────────────────────────────
-        if state == "live" and prev_state == "preview" and not game_started:
+        # Also trigger on inning > 0 in case API is slow to flip state to live
+        if (state == "live" or inning > 0) and prev_state == "preview" and not game_started:
             game_started = True
             log.info("GAME START: %s  |  MIL %d – OPP %d  (inning %d)",
                      matchup, mil_score, opp_score, inning)
@@ -587,22 +588,14 @@ if __name__ == "__main__":
 # [Service]
 # Type=simple
 # User=YOUR_USERNAME
-# Group=YOUR_GROUP
-# WorkingDirectory=/path/to/Brewers-Score-Checker
-
-# # Run as root to create and chown the log file before the main script starts
-# ExecStartPre=+/bin/bash -c 'touch /path/to/Brewers-Score-Checker/brewers.log && chown YOUR_USERNAME:YOUR_GROUP /path/to/Brewers-Score-Checker/brewers.log'
-#
-# ExecStart=/usr/bin/python3 /path/to/Brewers-Score-Checker/brewers.py \
+# ExecStart=/usr/bin/python3 /path/to/brewers.py \
 #     --webhook-start https://hooks.example.com/start \
 #     --webhook-score https://hooks.example.com/score \
-#     --webhook-end   https://hooks.example.com/end \
-#
+#     --webhook-end   https://hooks.example.com/end
 # Restart=on-failure
 # RestartSec=30
-#
-# # Ensure new files are created with 644 permissions (owner rw, group/other r)
-# UMask=0022
+# StandardOutput=append:/path/to/brewers.log
+# StandardError=append:/path/to/brewers.log
 #
 # [Install]
 # WantedBy=multi-user.target

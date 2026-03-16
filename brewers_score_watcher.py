@@ -276,7 +276,8 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                  inning, mil_score, prev_mil_score, opp_score, state)
 
         # ── Game start ────────────────────────────────────────────────────
-        if state == "live" and prev_state == "preview" and not game_started:
+        # Also trigger on inning > 0 in case API is slow to flip state to live
+        if (state == "live" or inning > 0) and prev_state == "preview" and not game_started:
             game_started = True
             log.info("GAME START: %s  |  MIL %d – OPP %d  (inning %d)",
                      matchup, mil_score, opp_score, inning)
