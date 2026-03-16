@@ -53,18 +53,18 @@ class FlushHandler(logging.FileHandler):
         super().emit(record)
         self.flush()
 
-# Clear any handlers that may have been added before this point
-root_logger = logging.getLogger()
-root_logger.handlers.clear()
-root_logger.setLevel(logging.INFO)
-root_logger.addHandler(FlushHandler(LOG_FILE, mode='a'))
-root_logger.addHandler(logging.StreamHandler(sys.stdout))
-for h in root_logger.handlers:
-    h.setFormatter(logging.Formatter(
-        fmt="%(asctime)s  %(levelname)-8s  %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
-log = logging.getLogger(__name__)
+# Configure a single logger with no propagation to avoid duplicate entries
+fmt = logging.Formatter(fmt="%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+log = logging.getLogger("brewers")
+log.setLevel(logging.INFO)
+log.propagate = False
+log.handlers.clear()
+_fh = FlushHandler(LOG_FILE, mode='a')
+_fh.setFormatter(fmt)
+_sh = logging.StreamHandler(sys.stdout)
+_sh.setFormatter(fmt)
+log.addHandler(_fh)
+log.addHandler(_sh)
 
 
 def send_webhook(url, payload, dry_run=False):
