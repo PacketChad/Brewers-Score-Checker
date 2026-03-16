@@ -62,6 +62,7 @@ WEBHOOK_TIMEOUT  = 10
 BREWERS_TEAM_ID  = 158
 BREWERS_ABBREV   = "MIL"
 SCHEDULE_REFRESH_HOURS = 24
+PREGAME_TIMEOUT_MINS   = 180     # bail out if game hasn't gone live this many minutes after scheduled start
 BROADCAST_DELAY_SEC    = 0       # extra wait after score detected before webhook fires
 POST_WEBHOOK_DELAY     = 30      # wait after any webhook fires to let it finish
 
@@ -282,6 +283,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
     game_started   = False
     game_ended     = False
     first_poll     = True   # used to establish score baseline without triggering webhook
+    pregame_start  = datetime.datetime.now(datetime.timezone.utc)  # track how long we've been in preview
 
     def _base_payload(event, mil, opp, inning):
         return {
@@ -306,6 +308,15 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
 
         log.info("Score check — inning: %s  |  MIL %d (prev %d)  OPP %d  |  state: %s",
                  inning, mil_score, prev_mil_score, opp_score, state)
+
+        # ── Pregame timeout — bail out if stuck in preview too long ────────
+        if not game_started and state == "preview":
+            mins_waiting = (datetime.datetime.now(datetime.timezone.utc) - pregame_start).total_seconds() / 60
+            if mins_waiting >= PREGAME_TIMEOUT_MINS:
+                log.warning("Game has been in preview state for %.0f minutes — possible postponement. Exiting watcher.", mins_waiting)
+                break
+            else:
+                log.info("Pregame — waiting for game to start (%.0f/%d min timeout).", mins_waiting, PREGAME_TIMEOUT_MINS)
 
         # ── Game start ────────────────────────────────────────────────────
         # Also trigger on inning > 0 in case API is slow to flip state to live
