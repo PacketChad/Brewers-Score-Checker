@@ -587,14 +587,22 @@ if __name__ == "__main__":
 # [Service]
 # Type=simple
 # User=YOUR_USERNAME
-# ExecStart=/usr/bin/python3 /path/to/brewers.py \
+# Group=YOUR_GROUP
+# WorkingDirectory=/path/to/Brewers-Score-Checker
+
+# # Run as root to create and chown the log file before the main script starts
+# ExecStartPre=+/bin/bash -c 'touch /path/to/Brewers-Score-Checker/brewers.log && chown YOUR_USERNAME:YOUR_GROUP /path/to/Brewers-Score-Checker/brewers.log'
+#
+# ExecStart=/usr/bin/python3 /path/to/Brewers-Score-Checker/brewers.py \
 #     --webhook-start https://hooks.example.com/start \
 #     --webhook-score https://hooks.example.com/score \
-#     --webhook-end   https://hooks.example.com/end
+#     --webhook-end   https://hooks.example.com/end \
+#
 # Restart=on-failure
 # RestartSec=30
-# StandardOutput=append:/path/to/brewers.log
-# StandardError=append:/path/to/brewers.log
+#
+# # Ensure new files are created with 644 permissions (owner rw, group/other r)
+# UMask=0022
 #
 # [Install]
 # WantedBy=multi-user.target
