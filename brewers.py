@@ -233,6 +233,10 @@ def parse_score(linescore, game):
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
+    # Log raw API fields to help diagnose state issues
+    log.info("API raw — abstractGameState: %s  isGameOver: %s  inning: %s  inningHalf: %s",
+             state_raw, is_game_over, inning, inning_half)
+
     # Use isGameOver or state=final as the game-over signal
     if is_game_over or state_raw == "final":
         state = "final"
