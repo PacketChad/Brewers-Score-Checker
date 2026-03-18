@@ -229,13 +229,18 @@ def parse_score(linescore, game):
         mil_score, opp_score = away_runs, home_runs
 
     inning       = linescore.get("currentInning", 0) or 0
-    inning_half  = linescore.get("currentInningHalf", "").lower()
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
     # Log raw API fields to help diagnose state issues
-    log.info("API raw — abstractGameState: %s  isGameOver: %s  inning: %s  inningHalf: %s",
-             state_raw, is_game_over, inning, inning_half)
+    log.info("API raw — abstractGameState: %s  isGameOver: %s  inning: %s",
+             state_raw, is_game_over, inning)
+    log.info("API raw — home: %s runs: %s  away: %s runs: %s  game home_abbrev: %s",
+             teams.get("home", {}).get("team", {}).get("abbreviation", "?"),
+             teams.get("home", {}).get("runs", "?"),
+             teams.get("away", {}).get("team", {}).get("abbreviation", "?"),
+             teams.get("away", {}).get("runs", "?"),
+             game["home_abbrev"])
 
     # Use isGameOver or state=final as the game-over signal
     if is_game_over or state_raw == "final":
