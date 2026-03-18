@@ -192,11 +192,12 @@ def fetch_season_schedule():
                 "game_pk":     game["gamePk"],
                 "home":        teams["home"]["team"]["name"],
                 "away":        teams["away"]["team"]["name"],
-                "home_abbrev": teams["home"]["team"].get("abbreviation", ""),
-                "away_abbrev": teams["away"]["team"].get("abbreviation", ""),
-                "utc_dt":      utc_dt,
-                "local_dt":    local_dt,
-                "label":       "{} @ {}  —  {}".format(
+                "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
+                "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+                "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
+                "utc_dt":          utc_dt,
+                "local_dt":        local_dt,
+                "label":           "{} @ {}  —  {}".format(
                     teams["away"]["team"]["name"],
                     teams["home"]["team"]["name"],
                     local_dt.strftime("%a %b %d %I:%M %p %Z"),
@@ -223,7 +224,7 @@ def parse_score(linescore, game):
     home_runs = teams.get("home", {}).get("runs", 0) or 0
     away_runs = teams.get("away", {}).get("runs", 0) or 0
 
-    if game["home_abbrev"] == BREWERS_ABBREV:
+    if game.get("brewers_are_home", game["home_abbrev"] == BREWERS_ABBREV):
         mil_score, opp_score = home_runs, away_runs
     else:
         mil_score, opp_score = away_runs, home_runs
@@ -235,12 +236,8 @@ def parse_score(linescore, game):
     # Log raw API fields to help diagnose state issues
     log.info("API raw — abstractGameState: %s  isGameOver: %s  inning: %s",
              state_raw, is_game_over, inning)
-    log.info("API raw — home: %s runs: %s  away: %s runs: %s  game home_abbrev: %s",
-             teams.get("home", {}).get("team", {}).get("abbreviation", "?"),
-             teams.get("home", {}).get("runs", "?"),
-             teams.get("away", {}).get("team", {}).get("abbreviation", "?"),
-             teams.get("away", {}).get("runs", "?"),
-             game["home_abbrev"])
+    log.info("API raw — home runs: %s  away runs: %s  brewers_are_home: %s",
+             home_runs, away_runs, game.get("brewers_are_home", "unknown"))
 
     # Use isGameOver or state=final as the game-over signal
     if is_game_over or state_raw == "final":
@@ -470,11 +467,12 @@ def get_live_game():
                 "game_pk":     game["gamePk"],
                 "home":        teams["home"]["team"]["name"],
                 "away":        teams["away"]["team"]["name"],
-                "home_abbrev": teams["home"]["team"].get("abbreviation", ""),
-                "away_abbrev": teams["away"]["team"].get("abbreviation", ""),
-                "utc_dt":      utc_dt,
-                "local_dt":    local_dt,
-                "label":       "{} @ {}  —  {}".format(
+                "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
+                "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+                "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
+                "utc_dt":          utc_dt,
+                "local_dt":        local_dt,
+                "label":           "{} @ {}  —  {}".format(
                     teams["away"]["team"]["name"],
                     teams["home"]["team"]["name"],
                     local_dt.strftime("%a %b %d %I:%M %p %Z"),
