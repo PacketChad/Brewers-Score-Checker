@@ -213,6 +213,32 @@ def fetch_season_schedule():
     return games
 
 
+
+def is_game_finished(game_pk):
+    """
+    Check if a game is finished by querying the schedule API status field.
+    Returns True if the game status is Final or Completed, False otherwise.
+    """
+    url  = ("https://statsapi.mlb.com/api/v1/schedule"
+            "?sportId=1&gamePks={}&hydrate=game(status)".format(game_pk))
+    data = http_get(url)
+    if not data:
+        return False
+
+    for date_block in data.get("dates", []):
+        for game in date_block.get("games", []):
+            if game.get("gamePk") != game_pk:
+                continue
+            status    = game.get("status", {})
+            state     = status.get("abstractGameState", "").lower()
+            code      = status.get("statusCode", "")
+            detailed  = status.get("detailedState", "").lower()
+            log.info("Schedule API status — abstractGameState: %s  statusCode: %s  detailedState: %s",
+                     state, code, detailed)
+            if state == "final" or code in ("F", "O", "UR", "CR") or "final" in detailed or "completed" in detailed:
+                return True
+    return False
+
 def get_linescore(game_pk):
     """Fetch the current linescore for a live game."""
     return http_get(MLB_GAME_URL.format(game_pk=game_pk))
@@ -317,6 +343,20 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
 
         log.info("Score check — inning: %s  |  MIL %d (prev %d)  OPP %d  |  state: %s",
                  inning, mil_score, prev_mil_score, opp_score, state)
+
+        # ── Check schedule API for definitive game over status ───────────────
+        if game_started and is_game_finished(game_pk):
+            game_ended = True
+            result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
+            log.info("GAME FINAL (schedule API): %s  |  MIL %d – OPP %d  (%s)",
+                     matchup, mil_score, opp_score, result.upper())
+            payload = _base_payload("game_end", mil_score, opp_score, inning)
+            payload["result"] = result
+            send_webhook(webhooks["game_end"], payload, dry_run)
+            if post_webhook_delay > 0:
+                log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
+                short_sleep(post_webhook_delay)
+            break
 
         # ── Pregame timeout — bail out if stuck in preview too long ────────
         if not game_started and inning == 0:
