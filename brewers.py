@@ -258,9 +258,6 @@ def parse_score(linescore, game):
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
-    log.info("API raw — home runs: %s  away runs: %s  brewers_are_home: %s",
-             home_runs, away_runs, game.get("brewers_are_home", "unknown"))
-
     # Use isGameOver or state=final as the game-over signal
     if is_game_over or state_raw == "final":
         state = "final"

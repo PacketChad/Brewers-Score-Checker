@@ -231,9 +231,6 @@ def parse_score(linescore, game):
     else:
         state = "preview"
 
-    log.info("API raw — home runs: %s  away runs: %s  brewers_are_home: %s",
-             home_runs, away_runs, game.get("brewers_are_home", "unknown"))
-
     return mil_score, opp_score, state, inning, home_runs, away_runs
 
 # ---------------------------------------------------------------------------
