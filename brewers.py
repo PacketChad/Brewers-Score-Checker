@@ -66,6 +66,26 @@ PREGAME_TIMEOUT_MINS   = 60     # bail out if game hasn't gone live this many mi
 BROADCAST_DELAY_SEC    = 0       # extra wait after score detected before webhook fires
 POST_WEBHOOK_DELAY     = 30      # wait after any webhook fires to let it finish
 
+
+# Hardcoded MLB team ID -> abbreviation lookup as fallback
+# when the schedule API doesn't return abbreviations
+MLB_TEAM_ABBREVS = {
+    108: "LAA", 109: "AZ",  110: "BAL", 111: "BOS", 112: "CHC",
+    113: "CIN", 114: "CLE", 115: "COL", 116: "DET", 117: "HOU",
+    118: "KC",  119: "LAD", 120: "WSH", 121: "NYM", 133: "ATH",
+    134: "PIT", 135: "SD",  136: "SEA", 137: "SF",  138: "STL",
+    139: "TB",  140: "TEX", 141: "TOR", 142: "MIN", 143: "PHI",
+    144: "ATL", 145: "CWS", 146: "MIA", 147: "NYY", 158: "MIL",
+}
+
+def get_team_abbrev(team_dict):
+    """Get team abbreviation from API response, falling back to lookup table."""
+    abbrev = team_dict.get("abbreviation", "")
+    if abbrev:
+        return abbrev
+    team_id = team_dict.get("id")
+    return MLB_TEAM_ABBREVS.get(team_id, "OPP")
+
 MLB_SCHEDULE_URL = (
     "https://statsapi.mlb.com/api/v1/schedule"
     "?sportId=1&teamId=158&gameType=R,S"
@@ -192,8 +212,8 @@ def fetch_season_schedule():
                 "game_pk":     game["gamePk"],
                 "home":        teams["home"]["team"]["name"],
                 "away":        teams["away"]["team"]["name"],
-                "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
-                "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+                "home_abbrev":     get_team_abbrev(teams["home"]["team"]),
+                "away_abbrev":     get_team_abbrev(teams["away"]["team"]),
                 "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
                 "utc_dt":          utc_dt,
                 "local_dt":        local_dt,
@@ -337,8 +357,6 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
 
         # ── Check schedule API for definitive game over status ───────────────
         finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
-        log.info("DEBUG game dict — home_abbrev: %s  away_abbrev: %s  brewers_are_home: %s",
-                 game.get("home_abbrev"), game.get("away_abbrev"), game.get("brewers_are_home"))
         opp_abbrev = (game["away_abbrev"] or "OPP") if game.get("brewers_are_home") else (game["home_abbrev"] or "OPP")
         if game.get("brewers_are_home"):
             score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
@@ -508,8 +526,8 @@ def get_live_game():
                 "game_pk":     game["gamePk"],
                 "home":        teams["home"]["team"]["name"],
                 "away":        teams["away"]["team"]["name"],
-                "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
-                "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+                "home_abbrev":     get_team_abbrev(teams["home"]["team"]),
+                "away_abbrev":     get_team_abbrev(teams["away"]["team"]),
                 "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
                 "utc_dt":          utc_dt,
                 "local_dt":        local_dt,
