@@ -337,6 +337,8 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
 
         # ── Check schedule API for definitive game over status ───────────────
         finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
+        log.info("DEBUG game dict — home_abbrev: %s  away_abbrev: %s  brewers_are_home: %s",
+                 game.get("home_abbrev"), game.get("away_abbrev"), game.get("brewers_are_home"))
         opp_abbrev = (game["away_abbrev"] or "OPP") if game.get("brewers_are_home") else (game["home_abbrev"] or "OPP")
         if game.get("brewers_are_home"):
             score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
