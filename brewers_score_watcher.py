@@ -57,6 +57,26 @@ POST_WEBHOOK_DELAY   = 30     # wait after any webhook fires to let it finish
 BREWERS_ABBREV         = "MIL"
 PREGAME_TIMEOUT_MINS   = 60     # bail out if game hasn't gone live this many minutes after scheduled start
 
+
+# Hardcoded MLB team ID -> abbreviation lookup as fallback
+# when the schedule API doesn't return abbreviations
+MLB_TEAM_ABBREVS = {
+    108: "LAA", 109: "AZ",  110: "BAL", 111: "BOS", 112: "CHC",
+    113: "CIN", 114: "CLE", 115: "COL", 116: "DET", 117: "HOU",
+    118: "KC",  119: "LAD", 120: "WSH", 121: "NYM", 133: "ATH",
+    134: "PIT", 135: "SD",  136: "SEA", 137: "SF",  138: "STL",
+    139: "TB",  140: "TEX", 141: "TOR", 142: "MIN", 143: "PHI",
+    144: "ATL", 145: "CWS", 146: "MIA", 147: "NYY", 158: "MIL",
+}
+
+def get_team_abbrev(team_dict):
+    """Get team abbreviation from API response, falling back to lookup table."""
+    abbrev = team_dict.get("abbreviation", "")
+    if abbrev:
+        return abbrev
+    team_id = team_dict.get("id")
+    return MLB_TEAM_ABBREVS.get(team_id, "OPP")
+
 MLB_SCHEDULE_URL = (
     "https://statsapi.mlb.com/api/v1/schedule"
     "?sportId=1&teamId=158&gameType=R,S"
@@ -167,8 +187,8 @@ def get_todays_game():
             "game_pk":     game["gamePk"],
             "home":        teams["home"]["team"]["name"],
             "away":        teams["away"]["team"]["name"],
-            "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
-            "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+            "home_abbrev":     get_team_abbrev(teams["home"]["team"]),
+            "away_abbrev":     get_team_abbrev(teams["away"]["team"]),
             "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
             "start_utc":       utc_dt,
             "start_local": local_dt,
