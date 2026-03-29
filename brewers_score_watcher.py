@@ -240,6 +240,7 @@ def parse_score(linescore, game):
         mil_score, opp_score = away_runs, home_runs
 
     inning       = linescore.get("currentInning", 0) or 0
+    inning_half  = linescore.get("currentInningHalf", "").strip()
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
@@ -251,7 +252,7 @@ def parse_score(linescore, game):
     else:
         state = "preview"
 
-    return mil_score, opp_score, state, inning, home_runs, away_runs
+    return mil_score, opp_score, state, inning, inning_half, home_runs, away_runs
 
 # ---------------------------------------------------------------------------
 # Interruptible sleeps
@@ -320,7 +321,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                 break
             continue
 
-        mil_score, opp_score, state, inning, home_runs, away_runs = parse_score(linescore, game)
+        mil_score, opp_score, state, inning, inning_half, home_runs, away_runs = parse_score(linescore, game)
 
         # ── Check schedule API for definitive game over status ───────────────
         finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
@@ -329,8 +330,10 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
             score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
         else:
             score_str = "{}(home): {}  MIL(away): {} (prev {})".format(opp_abbrev, opp_score, mil_score, prev_mil_score)
+        half_str = inning_half[:3].lower() if inning_half else ""
+        inning_str = "{} {}".format(half_str, inning).strip() if half_str else str(inning)
         log.info("inning: %s  |  %s  |  %s (%s) [%s]",
-                 inning, score_str, sched_detail or sched_state, sched_code, sched_state)
+                 inning_str, score_str, sched_detail or sched_state, sched_code, sched_state)
         if game_started and finished:
             game_ended = True
             result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
