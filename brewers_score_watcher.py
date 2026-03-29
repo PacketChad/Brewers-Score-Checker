@@ -53,8 +53,9 @@ PREGAME_POLL_SEC = 60   # seconds between checks while waiting for first pitch
 WEBHOOK_TIMEOUT  = 10   # seconds before a webhook POST gives up
 BREWERS_TEAM_ID  = 158
 BROADCAST_DELAY_SEC  = 0      # wait before score webhook (broadcast offset)
-POST_WEBHOOK_DELAY   = 30     # wait after any webhook fires to let it finish      # extra wait after score detected before webhook fires
-BREWERS_ABBREV   = "MIL"
+POST_WEBHOOK_DELAY   = 30     # wait after any webhook fires to let it finish
+BREWERS_ABBREV         = "MIL"
+PREGAME_TIMEOUT_MINS   = 60     # bail out if game hasn't gone live this many minutes after scheduled start
 
 MLB_SCHEDULE_URL = (
     "https://statsapi.mlb.com/api/v1/schedule"
@@ -166,15 +167,41 @@ def get_todays_game():
             "game_pk":     game["gamePk"],
             "home":        teams["home"]["team"]["name"],
             "away":        teams["away"]["team"]["name"],
-            "home_abbrev": teams["home"]["team"].get("abbreviation", ""),
-            "away_abbrev": teams["away"]["team"].get("abbreviation", ""),
-            "start_utc":   utc_dt,
+            "home_abbrev":     teams["home"]["team"].get("abbreviation", ""),
+            "away_abbrev":     teams["away"]["team"].get("abbreviation", ""),
+            "brewers_are_home": teams["home"]["team"].get("id") == BREWERS_TEAM_ID,
+            "start_utc":       utc_dt,
             "start_local": local_dt,
             "status":      game.get("status", {}).get("abstractGameState", "Preview"),
         }
 
     return None
 
+
+
+def is_game_finished(game_pk):
+    """
+    Check if a game is finished by querying the schedule API status field.
+    Returns (is_finished, state, code, detailed).
+    """
+    url  = ("https://statsapi.mlb.com/api/v1/schedule"
+            "?sportId=1&gamePks={}&hydrate=game(status)".format(game_pk))
+    data = http_get(url)
+    if not data:
+        return False, "", "", ""
+
+    for date_block in data.get("dates", []):
+        for game in date_block.get("games", []):
+            if game.get("gamePk") != game_pk:
+                continue
+            status   = game.get("status", {})
+            state    = status.get("abstractGameState", "").lower()
+            code     = status.get("statusCode", "")
+            detailed = status.get("detailedState", "").lower()
+            finished = (state == "final" or code in ("F", "O", "UR", "CR")
+                        or "final" in detailed or "completed" in detailed)
+            return finished, state, code, detailed
+    return False, "", "", ""
 
 def get_linescore(game_pk):
     """Fetch the current linescore for a game."""
@@ -187,13 +214,12 @@ def parse_score(linescore, game):
     home_runs = teams.get("home", {}).get("runs", 0) or 0
     away_runs = teams.get("away", {}).get("runs", 0) or 0
 
-    if game["home_abbrev"] == BREWERS_ABBREV:
+    if game.get("brewers_are_home", game["home_abbrev"] == BREWERS_ABBREV):
         mil_score, opp_score = home_runs, away_runs
     else:
         mil_score, opp_score = away_runs, home_runs
 
     inning       = linescore.get("currentInning", 0) or 0
-    inning_half  = linescore.get("currentInningHalf", "").lower()
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
@@ -205,7 +231,10 @@ def parse_score(linescore, game):
     else:
         state = "preview"
 
-    return mil_score, opp_score, state, inning
+    log.info("API raw — home runs: %s  away runs: %s  brewers_are_home: %s",
+             home_runs, away_runs, game.get("brewers_are_home", "unknown"))
+
+    return mil_score, opp_score, state, inning, home_runs, away_runs
 
 # ---------------------------------------------------------------------------
 # Interruptible sleeps
@@ -246,13 +275,14 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
     """
     game_pk = game["game_pk"]
     matchup = "{} @ {}".format(game["away"], game["home"])
-    log.info("Watching: %s  (gamePk %d)", matchup, game_pk)
+    log.info("Watcher active: %s  (gamePk %d)", matchup, game_pk)
 
     prev_mil_score = 0
     prev_state     = "preview"
     game_started   = False
     game_ended     = False
     first_poll     = True   # used to establish score baseline without triggering webhook
+    pregame_start  = datetime.datetime.now(datetime.timezone.utc)
 
     def _base_payload(event, mil, opp, inning):
         return {
@@ -273,10 +303,38 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                 break
             continue
 
-        mil_score, opp_score, state, inning = parse_score(linescore, game)
+        mil_score, opp_score, state, inning, home_runs, away_runs = parse_score(linescore, game)
 
-        log.info("Score check — inning: %s  |  MIL %d (prev %d)  OPP %d  |  state: %s",
-                 inning, mil_score, prev_mil_score, opp_score, state)
+        # ── Check schedule API for definitive game over status ───────────────
+        finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
+        opp_abbrev = game["away_abbrev"] or "OPP" if game.get("brewers_are_home") else game["home_abbrev"] or "OPP"
+        if game.get("brewers_are_home"):
+            score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
+        else:
+            score_str = "{}(home): {}  MIL(away): {} (prev {})".format(opp_abbrev, opp_score, mil_score, prev_mil_score)
+        log.info("inning: %s  |  %s  |  %s (%s) [%s]",
+                 inning, score_str, sched_detail or sched_state, sched_code, sched_state)
+        if game_started and finished:
+            game_ended = True
+            result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
+            log.info("GAME FINAL (schedule API): %s  |  MIL %d – OPP %d  (%s)",
+                     matchup, mil_score, opp_score, result.upper())
+            payload = _base_payload("game_end", mil_score, opp_score, inning)
+            payload["result"] = result
+            send_webhook(webhooks["game_end"], payload, dry_run)
+            if post_webhook_delay > 0:
+                log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
+                short_sleep(post_webhook_delay)
+            break
+
+        # ── Pregame timeout — bail out if stuck in preview too long ────────
+        if not game_started and inning == 0:
+            mins_waiting = (datetime.datetime.now(datetime.timezone.utc) - pregame_start).total_seconds() / 60
+            if mins_waiting >= PREGAME_TIMEOUT_MINS:
+                log.warning("Game has not started after %.0f minutes — possible postponement. Exiting watcher.", mins_waiting)
+                break
+            else:
+                log.info("Pregame — waiting for game to start (%.0f/%d min timeout).", mins_waiting, PREGAME_TIMEOUT_MINS)
 
         # ── Game start ────────────────────────────────────────────────────
         # Also trigger on inning > 0 in case API is slow to flip state to live
@@ -311,7 +369,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                 log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
                 time.sleep(post_webhook_delay)
 
-        # ── Game end ──────────────────────────────────────────────────────
+        # ── Game end fallback (state == "final") ─────────────────────────────
         if state == "final" and not game_ended:
             game_ended = True
             result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
@@ -333,7 +391,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         if not short_sleep(interval):
             break
 
-    log.info("Done watching game %d.", game_pk)
+    log.info("Watcher done: game %d.", game_pk)
 
 
 # ---------------------------------------------------------------------------
@@ -477,15 +535,15 @@ def main():
     log.info("=" * 60)
     log.info("Brewers Score Watcher started — PID %d", os.getpid())
     if args.dry_run:
-        log.info("Mode         : DRY-RUN (no webhooks will be sent)")
+        log.info("Mode          : DRY-RUN (no webhooks will be sent)")
     else:
-        log.info("Webhook start: %s", args.webhook_start)
-        log.info("Webhook score: %s", args.webhook_score)
-        log.info("Webhook end  : %s", args.webhook_end)
-    log.info("Poll interval: %ds live / %ds pregame", args.poll_interval, args.pregame_interval)
+        log.info("Webhook start : %s", args.webhook_start)
+        log.info("Webhook score : %s", args.webhook_score)
+        log.info("Webhook end   : %s", args.webhook_end)
+    log.info("Poll interval : %ds live / %ds pregame", args.poll_interval, args.pregame_interval)
     log.info("Broadcast delay: %ds", args.broadcast_delay)
     log.info("Post-webhook delay: %ds", args.post_webhook_delay)
-    log.info("Log file     : %s", LOG_FILE)
+    log.info("Log file      : %s", LOG_FILE)
     log.info("=" * 60)
 
     if args.test_webhooks:

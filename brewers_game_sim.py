@@ -122,11 +122,12 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
     as watch_game() in brewers.py.
     """
     game = {
-        "game_pk":     999999,
-        "home":        "Milwaukee Brewers",
-        "away":        "Chicago Cubs",
-        "home_abbrev": "MIL",
-        "away_abbrev": "CHC",
+        "game_pk":        999999,
+        "home":           "Milwaukee Brewers",
+        "away":           "Chicago Cubs",
+        "home_abbrev":    "MIL",
+        "away_abbrev":    "CHC",
+        "brewers_are_home": True,
     }
     matchup   = "{} @ {}".format(game["away"], game["home"])
     sequence  = build_game_sequence(start_score)
@@ -136,6 +137,7 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
     game_started   = False
     game_ended     = False
     first_poll     = True
+    pregame_start  = datetime.datetime.now(datetime.timezone.utc)
 
     def _base_payload(event, mil, opp, inning):
         return {
@@ -158,13 +160,43 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
     log.info("=" * 60)
 
     for i, (mil_score, opp_score, state, inning) in enumerate(sequence):
+        home_runs = mil_score if game["brewers_are_home"] else opp_score
+        away_runs = opp_score if game["brewers_are_home"] else mil_score
         log.info("--- Tick %d/%d ---", i + 1, len(sequence))
 
-        log.info("Score check — inning: %s  |  MIL %d (prev %d)  OPP %d  |  state: %s",
-                 inning, mil_score, prev_mil_score, opp_score, state)
+        opp_abbrev = game["away_abbrev"] if game["brewers_are_home"] else game["home_abbrev"]
+        if game["brewers_are_home"]:
+            score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
+        else:
+            score_str = "{}(home): {}  MIL(away): {} (prev {})".format(opp_abbrev, opp_score, mil_score, prev_mil_score)
+        log.info("inning: %s  |  %s  |  %s [simulated]",
+                 inning, score_str, state)
+
+        # ── Schedule API game-over check (simulated via state == "final") ──
+        if game_started and state == "final":
+            game_ended = True
+            result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
+            log.info("GAME FINAL (schedule API): %s  |  MIL %d – OPP %d  (%s)",
+                     matchup, mil_score, opp_score, result.upper())
+            payload = _base_payload("game_end", mil_score, opp_score, inning)
+            payload["result"] = result
+            send_webhook(webhooks["game_end"], payload, dry_run)
+            if post_webhook_delay > 0:
+                log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
+                time.sleep(post_webhook_delay)
+            break
+
+        # ── Pregame timeout ───────────────────────────────────────────────
+        if not game_started and inning == 0:
+            mins_waiting = (datetime.datetime.now(datetime.timezone.utc) - pregame_start).total_seconds() / 60
+            if mins_waiting >= 60:
+                log.warning("Game has not started after %.0f minutes — possible postponement. Exiting.", mins_waiting)
+                break
+            else:
+                log.info("Pregame — waiting for game to start (%.0f/60 min timeout).", mins_waiting)
 
         # ── Game start ────────────────────────────────────────────────────
-        if state == "live" and prev_state == "preview" and not game_started:
+        if (state == "live" or inning > 0) and prev_state == "preview" and not game_started:
             game_started = True
             log.info("GAME START: %s  |  MIL %d – OPP %d  (inning %d)",
                      matchup, mil_score, opp_score, inning)
@@ -184,27 +216,13 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
                      runs_added, prev_mil_score, mil_score, opp_score, inning)
             if broadcast_delay > 0:
                 log.info("Broadcast delay — waiting %ds before firing webhook...", broadcast_delay)
-                time.sleep(broadcast_delay)
+                time.sleep(broadcast_delay)  # short_sleep equivalent for test
             payload = _base_payload("brewers_score", mil_score, opp_score, inning)
             payload["runs_added"] = runs_added
             send_webhook(webhooks["brewers_score"], payload, dry_run)
             if post_webhook_delay > 0:
                 log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
                 time.sleep(post_webhook_delay)
-
-        # ── Game end ──────────────────────────────────────────────────────
-        if state == "final" and not game_ended:
-            game_ended = True
-            result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
-            log.info("GAME FINAL: %s  |  MIL %d – OPP %d  (%s)",
-                     matchup, mil_score, opp_score, result.upper())
-            payload = _base_payload("game_end", mil_score, opp_score, inning)
-            payload["result"] = result
-            send_webhook(webhooks["game_end"], payload, dry_run)
-            if post_webhook_delay > 0:
-                log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
-                time.sleep(post_webhook_delay)
-            break
 
         first_poll     = False
         prev_mil_score = mil_score
