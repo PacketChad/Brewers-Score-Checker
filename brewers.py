@@ -275,9 +275,7 @@ def parse_score(linescore, game):
         mil_score, opp_score = away_runs, home_runs
 
     inning       = linescore.get("currentInning", 0) or 0
-    inning_half  = linescore.get("currentInningHalf", "").strip()
-    log.info("DEBUG linescore keys: %s", list(linescore.keys()))
-    log.info("DEBUG inning_half raw: %s", linescore.get("currentInningHalf"))
+    inning_half  = linescore.get("inningHalf", "").strip()
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
