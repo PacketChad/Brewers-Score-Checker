@@ -217,27 +217,26 @@ def fetch_season_schedule():
 def is_game_finished(game_pk):
     """
     Check if a game is finished by querying the schedule API status field.
-    Returns True if the game status is Final or Completed, False otherwise.
+    Returns (is_finished, state, code, detailed).
     """
     url  = ("https://statsapi.mlb.com/api/v1/schedule"
             "?sportId=1&gamePks={}&hydrate=game(status)".format(game_pk))
     data = http_get(url)
     if not data:
-        return False
+        return False, "", "", ""
 
     for date_block in data.get("dates", []):
         for game in date_block.get("games", []):
             if game.get("gamePk") != game_pk:
                 continue
-            status    = game.get("status", {})
-            state     = status.get("abstractGameState", "").lower()
-            code      = status.get("statusCode", "")
-            detailed  = status.get("detailedState", "").lower()
-            log.info("Schedule API status — abstractGameState: %s  statusCode: %s  detailedState: %s",
-                     state, code, detailed)
-            if state == "final" or code in ("F", "O", "UR", "CR") or "final" in detailed or "completed" in detailed:
-                return True
-    return False
+            status   = game.get("status", {})
+            state    = status.get("abstractGameState", "").lower()
+            code     = status.get("statusCode", "")
+            detailed = status.get("detailedState", "").lower()
+            finished = (state == "final" or code in ("F", "O", "UR", "CR")
+                        or "final" in detailed or "completed" in detailed)
+            return finished, state, code, detailed
+    return False, "", "", ""
 
 def get_linescore(game_pk):
     """Fetch the current linescore for a live game."""
@@ -259,9 +258,6 @@ def parse_score(linescore, game):
     is_game_over = linescore.get("isGameOver", False)
     state_raw    = linescore.get("abstractGameState", "Preview").lower()
 
-    # Log raw API fields to help diagnose state issues
-    log.info("API raw — abstractGameState: %s  isGameOver: %s  inning: %s",
-             state_raw, is_game_over, inning)
     log.info("API raw — home runs: %s  away runs: %s  brewers_are_home: %s",
              home_runs, away_runs, game.get("brewers_are_home", "unknown"))
 
@@ -273,7 +269,7 @@ def parse_score(linescore, game):
     else:
         state = "preview"
 
-    return mil_score, opp_score, state, inning
+    return mil_score, opp_score, state, inning, home_runs, away_runs
 
 # ---------------------------------------------------------------------------
 # Interruptible sleeps
@@ -339,13 +335,19 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
                 break
             continue
 
-        mil_score, opp_score, state, inning = parse_score(linescore, game)
+        mil_score, opp_score, state, inning, home_runs, away_runs = parse_score(linescore, game)
 
-        log.info("Score check — inning: %s  |  MIL %d (prev %d)  OPP %d  |  state: %s",
-                 inning, mil_score, prev_mil_score, opp_score, state)
 
         # ── Check schedule API for definitive game over status ───────────────
-        if game_started and is_game_finished(game_pk):
+        finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
+        opp_abbrev = game["away_abbrev"] or "OPP" if game.get("brewers_are_home") else game["home_abbrev"] or "OPP"
+        if game.get("brewers_are_home"):
+            score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
+        else:
+            score_str = "{}(home): {}  MIL(away): {} (prev {})".format(opp_abbrev, opp_score, mil_score, prev_mil_score)
+        log.info("inning: %s  |  %s  |  %s (%s) [%s]",
+                 inning, score_str, sched_detail or sched_state, sched_code, sched_state)
+        if game_started and finished:
             game_ended = True
             result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
             log.info("GAME FINAL (schedule API): %s  |  MIL %d – OPP %d  (%s)",
