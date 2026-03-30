@@ -176,8 +176,8 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
         if game_started and state == "final":
             game_ended = True
             result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
-            log.info("GAME FINAL (schedule API): %s  |  MIL %d – OPP %d  (%s)",
-                     matchup, mil_score, opp_score, result.upper())
+            log.info("GAME FINAL (schedule API): %s  |  MIL %d – %s %d  (%s)",
+                     matchup, mil_score, opp_abbrev, opp_score, result.upper())
             payload = _base_payload("game_end", mil_score, opp_score, inning)
             payload["result"] = result
             send_webhook(webhooks["game_end"], payload, dry_run)
@@ -198,8 +198,8 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
         # ── Game start ────────────────────────────────────────────────────
         if (state == "live" or inning > 0) and prev_state == "preview" and not game_started:
             game_started = True
-            log.info("GAME START: %s  |  MIL %d – OPP %d  (inning %d)",
-                     matchup, mil_score, opp_score, inning)
+            log.info("GAME START: %s  |  MIL %d – %s %d  (inning %d)",
+                     matchup, mil_score, opp_abbrev, opp_score, inning)
             send_webhook(webhooks["game_start"],
                          _base_payload("game_start", mil_score, opp_score, inning), dry_run)
             if post_webhook_delay > 0:
@@ -212,8 +212,8 @@ def run_test(webhooks, broadcast_delay, post_webhook_delay, tick, dry_run, start
             log.info("First poll baseline — MIL score is already %d, skipping score webhook.", mil_score)
         elif (state in ("live", "final") or inning > 0) and mil_score > prev_mil_score:
             runs_added = mil_score - prev_mil_score
-            log.info("BREWERS SCORE! +%d run(s) — MIL %d -> %d, OPP %d  (inning %d)",
-                     runs_added, prev_mil_score, mil_score, opp_score, inning)
+            log.info("BREWERS SCORE! +%d run(s) — MIL %d -> %d, %s %d  (inning %d)",
+                     runs_added, prev_mil_score, mil_score, opp_abbrev, opp_score, inning)
             if broadcast_delay > 0:
                 log.info("Broadcast delay — waiting %ds before firing webhook...", broadcast_delay)
                 time.sleep(broadcast_delay)  # short_sleep equivalent for test
