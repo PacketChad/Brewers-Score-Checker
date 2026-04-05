@@ -352,6 +352,22 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         elif is_postponed and (game_started or inning > 0):
             log.info("Schedule API shows postponed (%s) but game is active (inning %s) — ignoring postponed status.",
                      sched_code, inning)
+            # If we're in the 9th or later with 3 outs, declare game over
+            scheduled_innings = 9
+            if game_started and inning >= scheduled_innings and outs >= 3:
+                log.warning("Linescore shows inning %d with %d outs — declaring game over despite postponed status.",
+                            inning, outs)
+                game_ended = True
+                result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
+                log.info("GAME FINAL (linescore): %s  |  MIL %d – %s %d  (%s)",
+                         matchup, mil_score, opp_abbrev, opp_score, result.upper())
+                payload = _base_payload("game_end", mil_score, opp_score, inning)
+                payload["result"] = result
+                send_webhook(webhooks["game_end"], payload, dry_run)
+                if post_webhook_delay > 0:
+                    log.info("Post-webhook delay — waiting %ds...", post_webhook_delay)
+                    short_sleep(post_webhook_delay)
+                break
 
         if game_started and finished:
             game_ended = True
