@@ -344,11 +344,14 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         inning_str = "{} {}".format(half_str, inning).strip() if half_str else str(inning)
         log.info("inning: %s  outs: %s  |  %s  |  %s (%s) [%s]",
                  inning_str, outs, score_str, sched_detail or sched_state, sched_code, sched_state)
-        # ── Postponed / rescheduled — exit watcher without firing webhooks ──
-        if is_postponed:
+        # ── Postponed / rescheduled — only exit if game hasn't actually started ──
+        if is_postponed and not game_started and inning == 0:
             log.warning("Game %d appears postponed/rescheduled (%s — %s). Exiting watcher without firing game_end webhook.",
                         game_pk, sched_code, sched_detail)
             break
+        elif is_postponed and (game_started or inning > 0):
+            log.info("Schedule API shows postponed (%s) but game is active (inning %s) — ignoring postponed status.",
+                     sched_code, inning)
 
         if game_started and finished:
             game_ended = True
