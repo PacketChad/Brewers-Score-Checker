@@ -208,7 +208,7 @@ def is_game_finished(game_pk):
             "?sportId=1&gamePks={}&hydrate=game(status)".format(game_pk))
     data = http_get(url)
     if not data:
-        return False, "", "", ""
+        return False, False, "", "", ""
 
     for date_block in data.get("dates", []):
         for game in date_block.get("games", []):
@@ -218,10 +218,20 @@ def is_game_finished(game_pk):
             state    = status.get("abstractGameState", "").lower()
             code     = status.get("statusCode", "")
             detailed = status.get("detailedState", "").lower()
-            finished = (state == "final" or code in ("F", "O", "UR", "CR")
-                        or "final" in detailed or "completed" in detailed)
-            return finished, state, code, detailed
-    return False, "", "", ""
+            # Exclude postponed/rescheduled/cancelled codes — these are not
+            # legitimate game completions and should not trigger game_end webhook
+            not_finished_codes = ("DR", "DI", "DC", "RR", "CR", "UR")
+            is_postponed = (code in not_finished_codes
+                            or "postponed" in detailed
+                            or "rescheduled" in detailed
+                            or "cancelled" in detailed)
+            finished = (not is_postponed
+                        and (state == "final"
+                             or code in ("F", "O")
+                             or "final" in detailed
+                             or "completed" in detailed))
+            return finished, is_postponed, state, code, detailed
+    return False, False, "", "", ""
 
 def get_linescore(game_pk):
     """Fetch the current linescore for a game."""
@@ -324,7 +334,7 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         mil_score, opp_score, state, inning, inning_half, outs, home_runs, away_runs = parse_score(linescore, game)
 
         # ── Check schedule API for definitive game over status ───────────────
-        finished, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
+        finished, is_postponed, sched_state, sched_code, sched_detail = is_game_finished(game_pk)
         opp_abbrev = (game["away_abbrev"] or "OPP") if game.get("brewers_are_home") else (game["home_abbrev"] or "OPP")
         if game.get("brewers_are_home"):
             score_str = "MIL(home): {} (prev {})  {}(away): {}".format(mil_score, prev_mil_score, opp_abbrev, opp_score)
@@ -334,6 +344,12 @@ def watch_game(game, webhooks, poll_sec, pregame_sec, broadcast_delay, post_webh
         inning_str = "{} {}".format(half_str, inning).strip() if half_str else str(inning)
         log.info("inning: %s  outs: %s  |  %s  |  %s (%s) [%s]",
                  inning_str, outs, score_str, sched_detail or sched_state, sched_code, sched_state)
+        # ── Postponed / rescheduled — exit watcher without firing webhooks ──
+        if is_postponed:
+            log.warning("Game %d appears postponed/rescheduled (%s — %s). Exiting watcher without firing game_end webhook.",
+                        game_pk, sched_code, sched_detail)
+            break
+
         if game_started and finished:
             game_ended = True
             result     = "win" if mil_score > opp_score else ("loss" if mil_score < opp_score else "tie")
