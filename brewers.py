@@ -61,7 +61,7 @@ PREGAME_POLL_SEC = 60
 WEBHOOK_TIMEOUT  = 10
 BREWERS_TEAM_ID  = 158
 BREWERS_ABBREV   = "MIL"
-SCHEDULE_REFRESH_HOURS = 24
+SCHEDULE_REFRESH_HOURS = 3      # refresh often so new playoff series get picked up
 PREGAME_TIMEOUT_MINS   = 60     # bail out if game hasn't gone live this many minutes after scheduled start
 BROADCAST_DELAY_SEC    = 0       # extra wait after score detected before webhook fires
 POST_WEBHOOK_DELAY     = 30      # wait after any webhook fires to let it finish
@@ -88,7 +88,7 @@ def get_team_abbrev(team_dict):
 
 MLB_SCHEDULE_URL = (
     "https://statsapi.mlb.com/api/v1/schedule"
-    "?sportId=1&teamId=158&gameType=R,S"
+    "?sportId=1&teamId=158&gameType=R,F,D,L,W"   # R=regular, F=Wild Card, D=DS, L=LCS, W=World Series (add S for spring training)
     "&hydrate=linescore,teams"
 )
 MLB_GAME_URL = "https://statsapi.mlb.com/api/v1/game/{game_pk}/linescore"
@@ -624,8 +624,8 @@ def run_agent(webhooks, poll_sec, pregame_sec, broadcast_delay, post_webhook_del
             game_index += 1
 
         if game_index >= len(games):
-            log.info("No more games in schedule. Sleeping 24h then re-checking...")
-            if not short_sleep(86400):
+            log.info("No more games in schedule. Sleeping 1h then re-checking...")
+            if not short_sleep(3600):
                 break
             fresh = fetch_season_schedule()
             if fresh:
